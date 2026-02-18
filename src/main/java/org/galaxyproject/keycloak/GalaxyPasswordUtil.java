@@ -82,10 +82,11 @@ public final class GalaxyPasswordUtil {
     private static boolean verifySha1Hex(String password, String storedHex) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
-            byte[] hash = md.digest(password.getBytes());
+            byte[] hash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             String computed = bytesToHex(hash);
             return MessageDigest.isEqual(
-                computed.getBytes(), storedHex.getBytes()
+                computed.getBytes(StandardCharsets.UTF_8),
+                storedHex.getBytes(StandardCharsets.UTF_8)
             );
         } catch (NoSuchAlgorithmException e) {
             return false;
