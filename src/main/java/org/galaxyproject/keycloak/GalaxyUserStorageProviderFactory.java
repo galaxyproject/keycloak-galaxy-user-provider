@@ -129,6 +129,10 @@ public class GalaxyUserStorageProviderFactory
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             throw new ComponentValidationException("JDBC URL is required");
         }
+        if (!jdbcUrl.startsWith("jdbc:postgresql:")) {
+            throw new ComponentValidationException(
+                    "JDBC URL must use the jdbc:postgresql: driver");
+        }
 
         String dbUser = model.get(CONFIG_DB_USER);
         String dbPassword = model.get(CONFIG_DB_PASSWORD);
