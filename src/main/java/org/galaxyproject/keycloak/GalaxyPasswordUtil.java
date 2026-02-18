@@ -65,14 +65,18 @@ public final class GalaxyPasswordUtil {
             PBEKeySpec spec = new PBEKeySpec(
                 password.toCharArray(), salt, iterations, KEY_LENGTH * 8
             );
-            SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-            byte[] actual = skf.generateSecret(spec).getEncoded();
-            String actualB64 = Base64.getEncoder().encodeToString(actual);
+            try {
+                SecretKeyFactory skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+                byte[] actual = skf.generateSecret(spec).getEncoded();
+                String actualB64 = Base64.getEncoder().encodeToString(actual);
 
-            return MessageDigest.isEqual(
-                actualB64.getBytes(StandardCharsets.UTF_8),
-                expectedB64.getBytes(StandardCharsets.UTF_8)
-            );
+                return MessageDigest.isEqual(
+                    actualB64.getBytes(StandardCharsets.UTF_8),
+                    expectedB64.getBytes(StandardCharsets.UTF_8)
+                );
+            } finally {
+                spec.clearPassword();
+            }
         } catch (IllegalArgumentException | NoSuchAlgorithmException
                  | InvalidKeySpecException e) {
             return false;
