@@ -1,5 +1,7 @@
 package org.galaxyproject.keycloak;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.component.ComponentValidationException;
 import org.keycloak.models.KeycloakSession;
@@ -12,6 +14,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,6 +32,15 @@ public class GalaxyUserStorageProviderFactory
     public static final String CONFIG_JDBC_URL = "jdbcUrl";
     public static final String CONFIG_DB_USER = "dbUser";
     public static final String CONFIG_DB_PASSWORD = "dbPassword";
+
+    private static final int POOL_MAX_SIZE = 5;
+    private static final int POOL_MIN_IDLE = 1;
+    private static final long CONNECTION_TIMEOUT_MS = 5000;
+    private static final long IDLE_TIMEOUT_MS = 300_000;
+    private static final long MAX_LIFETIME_MS = 600_000;
+
+    // Pool per component model ID (supports multiple realms with different configs)
+    private final ConcurrentHashMap<String, HikariDataSource> pools = new ConcurrentHashMap<>();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -69,16 +81,44 @@ public class GalaxyUserStorageProviderFactory
 
     @Override
     public GalaxyUserStorageProvider create(KeycloakSession session, ComponentModel model) {
+        try {
+            HikariDataSource ds = pools.computeIfAbsent(model.getId(), id -> createPool(model));
+            Connection connection = ds.getConnection();
+            return new GalaxyUserStorageProvider(session, model, connection);
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Failed to obtain connection from Galaxy database pool", e);
+            throw new RuntimeException("Cannot connect to Galaxy database", e);
+        }
+    }
+
+    private HikariDataSource createPool(ComponentModel model) {
         String jdbcUrl = model.get(CONFIG_JDBC_URL);
         String dbUser = model.get(CONFIG_DB_USER);
         String dbPassword = model.get(CONFIG_DB_PASSWORD);
 
-        try {
-            Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword);
-            return new GalaxyUserStorageProvider(session, model, connection);
-        } catch (SQLException e) {
-            LOG.log(Level.SEVERE, "Failed to connect to Galaxy database at " + jdbcUrl, e);
-            throw new RuntimeException("Cannot connect to Galaxy database", e);
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(jdbcUrl);
+        config.setUsername(dbUser);
+        config.setPassword(dbPassword);
+        config.setMaximumPoolSize(POOL_MAX_SIZE);
+        config.setMinimumIdle(POOL_MIN_IDLE);
+        config.setConnectionTimeout(CONNECTION_TIMEOUT_MS);
+        config.setIdleTimeout(IDLE_TIMEOUT_MS);
+        config.setMaxLifetime(MAX_LIFETIME_MS);
+        config.setPoolName("galaxy-user-pool-" + model.getId());
+
+        LOG.info("Creating Galaxy database connection pool for component " + model.getId());
+        return new HikariDataSource(config);
+    }
+
+    @Override
+    public void onUpdate(KeycloakSession session, RealmModel realm,
+                         ComponentModel oldModel, ComponentModel newModel) {
+        // Config may have changed, close the old pool so it gets recreated on next create()
+        HikariDataSource oldPool = pools.remove(oldModel.getId());
+        if (oldPool != null) {
+            LOG.info("Closing Galaxy database pool due to config update for component " + oldModel.getId());
+            oldPool.close();
         }
     }
 
@@ -90,14 +130,22 @@ public class GalaxyUserStorageProviderFactory
             throw new ComponentValidationException("JDBC URL is required");
         }
 
-        // Validate connection
         String dbUser = model.get(CONFIG_DB_USER);
         String dbPassword = model.get(CONFIG_DB_PASSWORD);
         try (Connection conn = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
-            LOG.info("Successfully validated Galaxy database connection to " + jdbcUrl);
+            LOG.info("Successfully validated Galaxy database connection");
         } catch (SQLException e) {
-            throw new ComponentValidationException(
-                    "Cannot connect to Galaxy database: " + e.getMessage());
+            LOG.log(Level.SEVERE, "Galaxy database connection validation failed", e);
+            throw new ComponentValidationException("Cannot connect to Galaxy database");
         }
+    }
+
+    @Override
+    public void close() {
+        pools.forEach((id, ds) -> {
+            LOG.info("Shutting down Galaxy database pool for component " + id);
+            ds.close();
+        });
+        pools.clear();
     }
 }
