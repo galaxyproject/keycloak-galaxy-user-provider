@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Base64;
+import java.util.logging.Logger;
 
 /**
  * Verifies passwords against Galaxy's stored hash format.
@@ -26,6 +27,8 @@ import java.util.Base64;
  * See: lib/galaxy/security/passwords.py in galaxyproject/galaxy
  */
 public final class GalaxyPasswordUtil {
+
+    private static final Logger LOG = Logger.getLogger(GalaxyPasswordUtil.class.getName());
 
     private GalaxyPasswordUtil() {}
 
@@ -88,10 +91,15 @@ public final class GalaxyPasswordUtil {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             byte[] hash = md.digest(password.getBytes(StandardCharsets.UTF_8));
             String computed = bytesToHex(hash);
-            return MessageDigest.isEqual(
+            boolean match = MessageDigest.isEqual(
                 computed.getBytes(StandardCharsets.UTF_8),
                 storedHex.getBytes(StandardCharsets.UTF_8)
             );
+            if (match) {
+                LOG.warning("User authenticated with legacy unsalted SHA-1 hash — "
+                        + "account should be migrated to PBKDF2");
+            }
+            return match;
         } catch (NoSuchAlgorithmException e) {
             return false;
         }
