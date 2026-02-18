@@ -96,6 +96,7 @@ public class GalaxyUserStorageProvider implements
         }
 
         try (PreparedStatement ps = connection.prepareStatement(query)) {
+            ps.setQueryTimeout(5);
             ps.setString(1, param);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
