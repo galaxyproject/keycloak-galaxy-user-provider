@@ -1,0 +1,72 @@
+services:
+  keycloak:
+    build:
+      context: .
+      dockerfile: docker/keycloak/Dockerfile
+    command:
+      - start-dev
+      - --import-realm
+      - --health-enabled=true
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8180"
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cat < /dev/null > /dev/tcp/localhost/8180"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  galaxy-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: galaxy
+      POSTGRES_USER: galaxy
+      POSTGRES_PASSWORD: galaxy
+    volumes:
+      - ./docker/galaxy-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galaxy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  test:
+    image: quay.io/keycloak/keycloak:26.0
+    entrypoint: ["bash", "/scripts/test-auth.sh"]
+    environment:
+      GALAXY_DB_URL: jdbc:postgresql://galaxy-db:5432/galaxy
+      GALAXY_DB_USER: galaxy
+      GALAXY_DB_PASSWORD: galaxy
+    volumes:
+      - ./docker/keycloak/init-federation.sh:/scripts/init-federation.sh:ro
+      - ./docker/test/test-auth.sh:/scripts/test-auth.sh:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      galaxy-db:
+        condition: service_healthy

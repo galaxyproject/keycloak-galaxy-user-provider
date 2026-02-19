@@ -1,0 +1,56 @@
+{
+  "id": "galaxy",
+  "realm": "galaxy",
+  "displayName": "Galaxy Test Realm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 3600,
+  "clients": [
+    {
+      "clientId": "test-client",
+      "name": "Test Client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "clientAuthenticatorType": "client-secret",
+      "secret": "test-client-secret",
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "publicClient": false,
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "basic",
+        "profile",
+        "roles",
+        "email"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "kcuser",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Keycloak",
+      "lastName": "User",
+      "email": "kcuser@test.org",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "kcpass",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
