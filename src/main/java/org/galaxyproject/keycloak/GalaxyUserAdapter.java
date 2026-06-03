@@ -3,6 +3,7 @@ package org.galaxyproject.keycloak;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
 /**
@@ -26,6 +27,21 @@ public class GalaxyUserAdapter extends AbstractUserAdapterFederatedStorage {
         this.galaxyUserId = galaxyUserId;
         this.username = username;
         this.email = email;
+    }
+
+    /**
+     * The Keycloak federated user id, of the form {@code f:<component>:<externalId>}.
+     *
+     * We key on the email: the inherited default keys on {@link #getUsername()},
+     * but {@link GalaxyUserStorageProvider#getUserById} resolves the external id
+     * via {@code getUserByEmail}. Without this override the two disagree whenever a
+     * Galaxy username differs from its email, so re-resolving the user (e.g. during
+     * the authorization-code-to-token exchange) returns null and the login fails
+     * with {@code invalid_code}.
+     */
+    @Override
+    public String getId() {
+        return StorageId.keycloakId(storageProviderModel, email);
     }
 
     @Override
@@ -69,9 +85,8 @@ public class GalaxyUserAdapter extends AbstractUserAdapterFederatedStorage {
     }
 
     /**
-     * The external ID stored in Keycloak's StorageId.
-     * We use the Galaxy user's email as the external key since
-     * that's the primary login identifier in Galaxy.
+     * The Galaxy {@code galaxy_user.id} primary key (distinct from the Keycloak
+     * federated id returned by {@link #getId()}).
      */
     public String getGalaxyUserId() {
         return galaxyUserId;
