@@ -39,11 +39,14 @@ class GalaxyUserStorageProviderTest {
             "jdbc:h2:mem:galaxy;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
     private static final String COMPONENT_ID = "galaxy-comp";
 
-    // Deliberately username != email — the case that triggered the bug.
+    // Deliberately username != email != id — the case that triggered the bug.
+    private static final String GALAXY_ID = "1";
     private static final String EMAIL = "alice@example.org";
     private static final String USERNAME = "alice";
 
+    private static final String DELETED_ID = "2";
     private static final String DELETED_EMAIL = "deleted@example.org";
+    private static final String INACTIVE_ID = "3";
     private static final String INACTIVE_EMAIL = "inactive@example.org";
 
     // Any valid Galaxy hash; lookups don't validate the password.
@@ -105,7 +108,7 @@ class GalaxyUserStorageProviderTest {
         assertNotNull(loggedIn, "login by email should find the user");
 
         String id = loggedIn.getId();
-        assertEquals("f:" + COMPONENT_ID + ":" + EMAIL, id);
+        assertEquals("f:" + COMPONENT_ID + ":" + GALAXY_ID, id);
 
         // Fresh provider == empty cache == the code-to-token request path.
         UserModel resolved = newProvider().getUserById(REALM, id);
@@ -115,9 +118,10 @@ class GalaxyUserStorageProviderTest {
     }
 
     @Test
-    void getIdIsKeyedOnEmailNotUsername() {
+    void getIdIsKeyedOnImmutableGalaxyId() {
         String id = newProvider().getUserByUsername(REALM, EMAIL).getId();
-        assertTrue(id.endsWith(":" + EMAIL), "federated id must use the email as external key");
+        assertTrue(id.endsWith(":" + GALAXY_ID), "federated id must use the galaxy_user.id as external key");
+        assertFalse(id.endsWith(":" + EMAIL), "regression: id must not be keyed on the (mutable) email");
         assertFalse(id.endsWith(":" + USERNAME), "regression: id must not be keyed on the username");
     }
 
@@ -136,10 +140,19 @@ class GalaxyUserStorageProviderTest {
     void excludesDeletedAndInactiveUsers() {
         assertNull(newProvider().getUserByEmail(REALM, DELETED_EMAIL), "deleted users must not resolve");
         assertNull(newProvider().getUserByEmail(REALM, INACTIVE_EMAIL), "inactive users must not resolve");
+        // getUserById applies the same deleted/active filter.
+        assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":" + DELETED_ID));
+        assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":" + INACTIVE_ID));
     }
 
     @Test
     void unknownIdReturnsNull() {
-        assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":nobody@example.org"));
+        assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":999999"));
+    }
+
+    @Test
+    void nonNumericExternalIdReturnsNull() {
+        // e.g. a stale email-keyed id from a prior scheme — not a galaxy_user.id.
+        assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":alice@example.org"));
     }
 }

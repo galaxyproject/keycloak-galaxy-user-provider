@@ -32,16 +32,17 @@ public class GalaxyUserAdapter extends AbstractUserAdapterFederatedStorage {
     /**
      * The Keycloak federated user id, of the form {@code f:<component>:<externalId>}.
      *
-     * We key on the email: the inherited default keys on {@link #getUsername()},
-     * but {@link GalaxyUserStorageProvider#getUserById} resolves the external id
-     * via {@code getUserByEmail}. Without this override the two disagree whenever a
-     * Galaxy username differs from its email, so re-resolving the user (e.g. during
-     * the authorization-code-to-token exchange) returns null and the login fails
-     * with {@code invalid_code}.
+     * We key on the immutable {@code galaxy_user.id}, which
+     * {@link GalaxyUserStorageProvider#getUserById} resolves with {@code WHERE id = ?}.
+     * The two must agree: the inherited default keys on {@link #getUsername()}, so
+     * without this override re-resolving the user (e.g. during the
+     * authorization-code-to-token exchange) fails and the login is rejected with
+     * {@code invalid_code}. Keying on the id rather than the email also keeps a
+     * user's federated identity stable across email changes.
      */
     @Override
     public String getId() {
-        return StorageId.keycloakId(storageProviderModel, email);
+        return StorageId.keycloakId(storageProviderModel, galaxyUserId);
     }
 
     @Override
