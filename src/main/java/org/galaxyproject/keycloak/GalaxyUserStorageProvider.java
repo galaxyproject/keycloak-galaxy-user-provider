@@ -44,13 +44,16 @@ public class GalaxyUserStorageProvider implements
             "SELECT id, email, username, password FROM galaxy_user " +
             "WHERE username = ? AND deleted = false AND active = true";
 
+    private static final String QUERY_BY_ID =
+            "SELECT id, email, username, password FROM galaxy_user " +
+            "WHERE id = ? AND deleted = false AND active = true";
+
     private final KeycloakSession session;
     private final ComponentModel model;
     private final Connection connection;
 
-    // Per-transaction cache: external ID (email) -> adapter
+    // Per-transaction caches, keyed by email.
     private final Map<String, GalaxyUserAdapter> loadedUsers = new HashMap<>();
-    // Per-transaction cache: external ID (email) -> stored password hash
     private final Map<String, String> passwordCache = new HashMap<>();
 
     public GalaxyUserStorageProvider(
@@ -81,9 +84,9 @@ public class GalaxyUserStorageProvider implements
 
     @Override
     public UserModel getUserById(RealmModel realm, String id) {
-        StorageId storageId = new StorageId(id);
-        String externalId = storageId.getExternalId();
-        return getUserByEmail(realm, externalId);
+        // The external id is the immutable galaxy_user.id (see GalaxyUserAdapter#getId).
+        String externalId = new StorageId(id).getExternalId();
+        return findUserById(realm, externalId);
     }
 
     private GalaxyUserAdapter findUser(RealmModel realm, String query, String param) {
@@ -100,23 +103,57 @@ public class GalaxyUserStorageProvider implements
             ps.setString(1, param);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    String galaxyId = rs.getString("id");
-                    String email = rs.getString("email");
-                    String username = rs.getString("username");
-                    String password = rs.getString("password");
-
-                    GalaxyUserAdapter adapter = new GalaxyUserAdapter(
-                            session, realm, model, galaxyId, username, email
-                    );
-                    loadedUsers.put(email, adapter);
-                    passwordCache.put(email, password);
-                    return adapter;
+                    return mapUser(realm, rs);
                 }
             }
         } catch (SQLException e) {
             LOG.log(Level.SEVERE, "Error querying Galaxy user database", e);
         }
         return null;
+    }
+
+    private GalaxyUserAdapter findUserById(RealmModel realm, String externalId) {
+        final long galaxyId;
+        try {
+            galaxyId = Long.parseLong(externalId);
+        } catch (NumberFormatException e) {
+            // External id isn't a galaxy_user.id (e.g. a stale email-keyed id) — not ours.
+            return null;
+        }
+
+        // Check cache first
+        for (GalaxyUserAdapter cached : loadedUsers.values()) {
+            if (cached.getGalaxyUserId().equals(externalId)) {
+                return cached;
+            }
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(QUERY_BY_ID)) {
+            ps.setQueryTimeout(5);
+            ps.setLong(1, galaxyId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapUser(realm, rs);
+                }
+            }
+        } catch (SQLException e) {
+            LOG.log(Level.SEVERE, "Error querying Galaxy user database", e);
+        }
+        return null;
+    }
+
+    private GalaxyUserAdapter mapUser(RealmModel realm, ResultSet rs) throws SQLException {
+        String galaxyId = rs.getString("id");
+        String email = rs.getString("email");
+        String username = rs.getString("username");
+        String password = rs.getString("password");
+
+        GalaxyUserAdapter adapter = new GalaxyUserAdapter(
+                session, realm, model, galaxyId, username, email
+        );
+        loadedUsers.put(email, adapter);
+        passwordCache.put(email, password);
+        return adapter;
     }
 
     // --- CredentialInputValidator ---
