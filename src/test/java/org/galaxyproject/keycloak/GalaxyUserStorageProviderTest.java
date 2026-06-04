@@ -146,6 +146,21 @@ class GalaxyUserStorageProviderTest {
     }
 
     @Test
+    void exposesStandardClaimsAsAttributes() {
+        // Keycloak's stock email/given_name/family_name mappers are user-ATTRIBUTE
+        // mappers: they read getFirstAttribute(...), not getEmail()/getFirstName().
+        // A resolved-by-id user (the token-generation path) must surface them, or
+        // the token ships without an email claim and Galaxy's pipeline crashes.
+        UserModel user = newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":" + GALAXY_ID);
+        assertNotNull(user);
+        assertEquals(EMAIL, user.getFirstAttribute(UserModel.EMAIL), "email claim must resolve via attributes");
+        assertEquals(USERNAME, user.getFirstAttribute(UserModel.USERNAME));
+        assertEquals(USERNAME, user.getFirstAttribute(UserModel.FIRST_NAME));
+        assertEquals(EMAIL, user.getAttributeStream(UserModel.EMAIL).findFirst().orElse(null));
+        assertEquals(EMAIL, user.getAttributes().get(UserModel.EMAIL).get(0));
+    }
+
+    @Test
     void unknownIdReturnsNull() {
         assertNull(newProvider().getUserById(REALM, "f:" + COMPONENT_ID + ":999999"));
     }
