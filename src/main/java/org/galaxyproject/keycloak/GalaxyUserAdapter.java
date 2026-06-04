@@ -1,10 +1,16 @@
 package org.galaxyproject.keycloak;
 
+import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * Maps a galaxy_user row to Keycloak's UserModel interface.
@@ -83,6 +89,43 @@ public class GalaxyUserAdapter extends AbstractUserAdapterFederatedStorage {
     @Override
     public boolean isEnabled() {
         return true;
+    }
+
+    /**
+     * Surface the standard user properties as Keycloak attributes.
+     *
+     * Keycloak's stock OIDC mappers for {@code email}, {@code given_name} and
+     * {@code family_name} are <em>user-attribute</em> mappers: they resolve a
+     * claim through {@link #getAttributes()} / {@link #getFirstAttribute(String)},
+     * not through the {@link #getEmail()} / {@link #getFirstName()} getters. The
+     * inherited {@link AbstractUserAdapterFederatedStorage} only special-cases
+     * {@code username} and otherwise reads the (empty, for this read-only
+     * provider) federated attribute store, so without these overrides those
+     * claims come back null and the token ships with {@code email_verified} but
+     * no {@code email} — which makes Galaxy's OIDC pipeline crash building a user
+     * ({@code 'NoneType' object has no attribute 'lower'}). We therefore expose
+     * the columns we hold as the canonical attributes.
+     */
+    @Override
+    public Map<String, List<String>> getAttributes() {
+        MultivaluedHashMap<String, String> attributes = new MultivaluedHashMap<>();
+        attributes.add(UserModel.USERNAME, getUsername());
+        attributes.add(UserModel.EMAIL, getEmail());
+        attributes.add(UserModel.FIRST_NAME, getFirstName());
+        attributes.add(UserModel.LAST_NAME, getLastName());
+        return attributes;
+    }
+
+    @Override
+    public String getFirstAttribute(String name) {
+        List<String> values = getAttributes().get(name);
+        return (values == null || values.isEmpty()) ? null : values.get(0);
+    }
+
+    @Override
+    public Stream<String> getAttributeStream(String name) {
+        List<String> values = getAttributes().get(name);
+        return values == null ? Stream.empty() : values.stream();
     }
 
     /**
